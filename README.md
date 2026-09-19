@@ -129,3 +129,4 @@ Observed structure (sample):
   This needs its own whole project design.
 - Devtree-defined skills and tools for AI agents.
 - Cross-repo discovery and indexing for navigation and search.
+- A generic `repo-init` devtree wrapper that sequences per-concern init steps, one of which is `beads-devtree-init` (a thin wrapper over `bd init`).
