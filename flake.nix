@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05"; # last stable
 
     systems.url = "github:nix-systems/default";
     devshell.url = "github:numtide/devshell";
@@ -21,7 +21,7 @@
     devShells = eachSystem (system: with (forSys system); {
       default = devsh.mkShell {
         packages = [
-          pkgs.hello # example 😉
+          pkgs.beads # bd <https://beads.gascity.com/> 🤯
         ];
       };
     });
