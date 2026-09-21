@@ -11,6 +11,9 @@ Task items can reference any item in the devtree, across project boundaries.
 
 Perso and work each get their own devtree, so the two contexts never mix.
 
+Each devtree root carries a `.devtree-root` marker file.
+Tooling walks up from a project to find it and so locate the enclosing devtree.
+
 ## Human-first constraint
 
 This harness serves a human first, not only AI agents.
