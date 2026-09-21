@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+# Resolve the enclosing devtree root and print it as JSON.
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+MARKER_FILENAME = ".devtree-root"
+
+
+class ScriptError(Exception):
+    """Raised when the script encounters an error."""
+
+
+def print_err(msg: str) -> None:
+    """Print msg to stderr."""
+    print(msg, file=sys.stderr)
+
+
+def usage_and_exit(status: int) -> None:
+    """Print usage to stderr and exit with status."""
+    print_err("Usage: devtree root --json")
+    sys.exit(status)
+
+
+def find_devtree_root(start: Path) -> Path:
+    """Return the nearest ancestor of start (inclusive) holding the devtree marker."""
+    current = start
+    while True:
+        if (current / MARKER_FILENAME).exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            raise ScriptError(
+                f"no {MARKER_FILENAME} found above {start}; create one at the devtree root"
+            )
+        current = parent
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse the subcommand and its flags."""
+    parser = argparse.ArgumentParser(
+        prog="devtree",
+        description="Work with the enclosing devtree.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    root_cmd = sub.add_parser("root", help="print the enclosing devtree root")
+    root_cmd.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON; required (only supported output for now)",
+    )
+    return parser.parse_args()
+
+
+def print_json(payload: dict[str, str]) -> None:
+    """Print payload as JSON, pretty-printing through jq when stdout is a terminal."""
+    compact = json.dumps(payload)
+    if sys.stdout.isatty() and print_pretty_with_jq(compact):
+        return
+    print(compact)
+
+
+def print_pretty_with_jq(compact_json: str) -> bool:
+    """Print compact_json through `jq .` and report whether it succeeded."""
+    if shutil.which("jq") is None:
+        return False
+    try:
+        # stdout stays inherited so jq colors its output for the terminal.
+        proc = subprocess.run(["jq", "."], input=compact_json, text=True, check=False)
+    except OSError:
+        return False
+    return proc.returncode == 0
+
+
+def cmd_root(args: argparse.Namespace) -> None:
+    """Print the enclosing devtree root as JSON with its name and path."""
+    if not args.json:
+        raise ScriptError("root requires --json")
+    root = find_devtree_root(Path.cwd())
+    print_json({"name": root.name, "path": str(root)})
+
+
+def main() -> bool:
+    args = parse_args()
+    try:
+        match args.command:
+            case "root":
+                cmd_root(args)
+            case _:
+                raise ScriptError(f"unknown command: {args.command}")
+    except ScriptError as exc:
+        print_err(f"!! ERROR: {exc}")
+        return False
+    return True
+
+
+if __name__ == "__main__":
+    sys.exit(0 if main() else 1)

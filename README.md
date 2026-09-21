@@ -27,6 +27,13 @@ This repo aims to contain:
 - Nix package definitions for the harness itself
 - NixOS modules and configs for optional tooling around the harness
 
+## Harness packages
+
+Each exposed on flake `packages.<system>.*`.
+
+- `devtree`: CLI over the devtree itself.
+  For now only `devtree root --json`, which resolves the enclosing devtree root by walking up for the `.devtree-root` marker and prints `{name, path}`.
+
 ## Status
 
 Early scoping: the harness is being designed, and decisions are not final yet.
