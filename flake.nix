@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05"; # last stable
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
     systems.url = "github:nix-systems/default";
     devshell.url = "github:numtide/devshell";
@@ -25,7 +25,11 @@
     devShells = eachSystem (system: with (forSys system); {
       default = devsh.mkShell {
         packages = [
-          pkgs.beads # bd <https://beads.gascity.com/> 🤯
+          # bd <https://beads.gascity.com/> 🤯
+          (pkgs.beads.overrideAttrs {
+            # On nixos-unstable, beads gets built and the checkPhase takes FOREVER to run.. @2026-09
+            doCheck = false;
+          })
         ];
       };
     });
