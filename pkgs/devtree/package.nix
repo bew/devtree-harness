@@ -44,10 +44,14 @@ python3Packages.buildPythonApplication {
 
   doCheck = true;
 
+  preCheck = ''
+    # Patch where the test file finds the binary to test
+    substituteInPlace ./devtree.bats \
+      --replace-fail 'SCRIPT_PATH="$SCRIPT_DIR/devtree"' SCRIPT_PATH="$out/bin/devtree"
+  '';
   checkPhase = ''
     runHook preCheck
-    # Keep HOME inside the writable build tmpdir, away from the real home.
-    HOME=$TMPDIR bats devtree.bats
+    bats devtree.bats
     runHook postCheck
   '';
 
