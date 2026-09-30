@@ -19,7 +19,7 @@
   in
   {
     packages = eachSystem (system: with (forSys system); {
-      devtree = pkgs.callPackage ./pkgs/devtree/package.nix { };
+      devtree = pkgs.callPackage ./tooling/devtree/package.nix { };
     });
 
     devShells = eachSystem (system: with (forSys system); {
