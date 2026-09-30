@@ -71,13 +71,16 @@ Resolving a bare project across every known devtree's project registry, used by 
 **Target forms**:
 
 ```
-target    := qualified | bare-project | bare-devtree
+target    := address [ ":" scope ]
+address   := qualified | bare-project | bare-devtree
 qualified := <devtree-name> ":" <project-prefix>
 ```
 
+- `address` — the routing target proper: a devtree and/or a project.
 - `qualified` — `work:cmdo-nix`.
 - `bare-project` — `cmdo-nix`.
 - `bare-devtree` — `work`.
+- `scope` — optional third segment (`work:cmdo-nix:auth`), rewritten into `bd` label arguments; see *Routing semantics* and the task-scopes spec.
 
 **Command shape**:
 
@@ -138,9 +141,9 @@ $ bdg ghh list
 ### Routing semantics
 
 `bdg`/`bdt` resolve the target to a workspace directory, change into it, and exec `bd` from `PATH` with the forwarded arguments.
-The underlying `bd` runs unmodified: no output rewriting, no query interception.
+The underlying `bd` runs unmodified, save for one rewrite: a target's `:scope` segment is turned into `bd` label arguments before exec (see the task-scopes spec). There is no other output rewriting or query interception.
 `bdg`/`bdt` stream `bd`'s output and propagate its exit status, so they are transparent for piping and scripting.
-Exec'ing `bd` from `PATH` (rather than a private binary) is deliberate: it lets the target devtree's shared-server wrapper start and attach its Dolt server (see *Placement / Scope*).
+Exec'ing `bd` from `PATH` (rather than a private binary) is deliberate: it lets the target devtree's `bd` wrapper start and attach its shared Dolt server (see *Placement / Scope*).
 
 ## Resolution rules
 
@@ -231,8 +234,9 @@ A devtree project registry only changes through interaction or an explicit `refr
 ### Out of scope
 
 - **Aggregate or cross-project reporting.** `bdg`/`bdt` route one command to one project; there is no `bdg all …`.
-- **The shared-server `bd` wrapper.** It is an external artifact (see *Related artifacts*); `bdg`/`bdt` only rely on it being on `PATH`.
+- **The `bd` wrapper.** It is an external artifact (see *Related artifacts*); `bdg`/`bdt` only rely on it being on `PATH`.
 - **Registry management commands.** `devtree registry lazy-register` and `devtree registry refresh` belong to the `devtree` CLI; this spec fixes only their contract.
+- **Scope semantics.** The `:scope` model and its translation into `bd` label arguments belong to the task-scopes spec; this spec only reserves the optional third target segment.
 - **`bd` itself** and its issue model, which `bdg`/`bdt` do not reimplement.
 
 ## Alternatives & Tradeoffs
@@ -246,7 +250,7 @@ $ bdg work:cmdo-nix list --status=open
 # -> chdir <devtree>/cmdo-nix, exec bd list --status=open
 ```
 
-- Advantages: minimal surface; `bd` stays the single source of truth; arguments, output, and exit status pass through untouched; matches Gas City's `gc bd --rig` ceiling.
+- Advantages: minimal surface; `bd` stays the single source of truth; arguments, output, and exit status pass through untouched, bar the `:scope` rewrite; matches Gas City's `gc bd --rig` ceiling.
 - Costs: no cross-project view; every answer comes from a single project.
 
 ### Option B — routing plus aggregate reporting
@@ -275,10 +279,11 @@ $ bdg all list --status=open       # every project, every devtree
 
 ## Related artifacts
 
-- `HANDOFF-20260920-beads-shared-server-devtree.md` — the shared-server `bd` wrapper this spec routes into (one Dolt socket per devtree).
+- `HANDOFF-20260920-beads-shared-server-devtree.md` — the `bd` wrapper this spec routes into (one shared Dolt socket per devtree).
 - `README.md` — the devtree definition, the human-first constraint, and the tooling inventory.
 - `docs/beads-refs/` — the `bd` data model, how-to, and tag vocabulary, including the `issue_prefix` and `external:<project>:<capability>` mechanics this spec leans on.
 - `_SPECS/devtree-daemons/SPEC.md` — the `<devtree>/.state/` convention and the one-server-per-devtree pattern.
 - `EXPLORATION-*.md` in this directory — the pre-spec design record (resolver-core, registry, routing-vs-aggregate, bd-wrapper-interaction).
+- `_SPECS/task-scopes/SPEC.md` — the task-scopes spec: the `:scope` model and how the third target segment is translated into `bd` label arguments.
 
 ## Global Open Questions
