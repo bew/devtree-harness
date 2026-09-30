@@ -5,17 +5,21 @@
 Beads (`bd`) tracks work in a single repository.
 It finds its workspace by walking up for a `.beads/` directory and scopes every query to that workspace's `issue_prefix`.
 That model is exactly right inside one project, which is why per-project isolation needs no extra tooling.
+
 It has no notion, however, of the many independent projects a developer keeps on one machine, nor of the devtrees that group them (see `README.md` for the devtree definition).
 There is no way to address a different project, or a different devtree, from a shell without changing directory first, and no coherent scheme for naming such a target.
 
-`bdg` and `bdt` are the addressing layer that fills that gap.
-They take a user-typed target, resolve it to exactly one workspace, and route the `bd` invocation there: move to that directory, then exec `bd`.
-They are pure routing — one command, one project — and deliberately do not reimplement `bd`.
+`wkg` and `wkt` are the addressing layer that fills that gap.
+They take a user-typed target, resolve it to exactly one workspace, and route the invocation there: move to that directory, then exec `wk`.
+They are pure routing — one command, one project — and deliberately do not reimplement `wk`.
+
+The user-facing surface is the `wk`/`wkg`/`wkt` frontend; see `_SPECS/wk-beads-wrappers/SPEC.md`.
 
 The layer serves the human first, per the harness constraint in `README.md`: short commands, from anywhere, with agent support as a layer on top.
 Two entry points cover the two situations a person works from.
-`bdg` addresses any known devtree from anywhere: it resolves a bare name in the enclosing devtree when there is one, and otherwise across all known devtrees.
-`bdt` is the in-devtree form: it resolves the enclosing devtree from the current directory and only ever reads that devtree's project registry.
+
+`wkg` addresses any known devtree from anywhere: it resolves a bare name in the enclosing devtree when there is one, and otherwise across all known devtrees.
+`wkt` is the in-devtree form: it resolves the enclosing devtree from the current directory and only ever reads that devtree's project registry.
 
 The design stays within the precedent set by Gas City's `gc bd --rig <name>`, which routes by changing directory and exec'ing `bd` unmodified.
 It also leans on beads' own shared-server model, where one Dolt server per devtree keeps projects logically isolated by `issue_prefix`.
@@ -23,11 +27,11 @@ It also leans on beads' own shared-server model, where one Dolt server per devtr
 
 ## Terminology & Key Concepts
 
-**`bdg`** (new!):
+**`wkg`** (new!):
 The cross-devtree routing command.
-It resolves a target, then routes the `bd` invocation there.
+It resolves a target, then routes the invocation (via `wk`) there.
 
-**`bdt`** (new!):
+**`wkt`** (new!):
 The in-devtree routing command.
 It resolves the enclosing devtree from the current directory and only ever reads that devtree's project registry.
 
@@ -57,16 +61,16 @@ The global list of known devtrees, held as name and path under `$XDG_STATE_HOME/
 The idempotent upsert, exposed as `devtree registry lazy-register`, that devtree-aware tooling calls on interaction to add the current project to its devtree's project registry and the current devtree to the known-devtrees list.
 
 **cwd-scoped resolution** (new!):
-Resolving a target within the enclosing devtree of the current directory only, as `bdt` and in-devtree `bdg` do.
+Resolving a target within the enclosing devtree of the current directory only, as `wkt` and in-devtree `wkg` do.
 
 **registry-scoped resolution** (new!):
-Resolving a bare project across every known devtree's project registry, used by `bdg` outside any devtree.
+Resolving a bare project across every known devtree's project registry, used by `wkg` outside any devtree.
 
 
 ## Naming & IDs
 
 **Commands**:
-`bdg` (cross-devtree) and `bdt` (in-devtree).
+`wkg` (cross-devtree) and `wkt` (in-devtree).
 
 **Target forms**:
 
@@ -85,65 +89,66 @@ qualified := <devtree-name> ":" <project-prefix>
 **Command shape**:
 
 ```
-bdg <target> [bd-args…]
-bdt <project-prefix> [bd-args…]     # devtree taken from cwd
+wkg <target> [bd-args…]
+wkt <project-prefix> [bd-args…]     # devtree taken from cwd
 ```
 
-The first positional argument is always the target; everything after it is forwarded verbatim to `bd`.
-A missing target is an error: `bdt` does not fall back to the current project, and plain `bd` is used for that.
+The first positional argument is always the target; everything after it is forwarded verbatim to `wk`.
+A missing target is an error: `wkt` does not fall back to the current project, and plain `wk` is used for that.
 
 ## Interface / How to use
 
-Both commands take a target as their first positional argument and forward everything after it to `bd` unchanged.
+Both commands take a target as their first positional argument and forward everything after it to `wk` unchanged.
 
-### `bdg` — cross-devtree routing
+### `wkg` — cross-devtree routing
 
 ```
 # Qualified: devtree and project named explicitly. Resolves from anywhere.
-$ bdg self:ghh list --status=open
+$ wkg self:ghh list --status=open
 
 # Bare project.
 # Inside a devtree, resolved in that devtree only.
 # Outside a devtree, resolved across all known devtrees.
-$ bdg cmdo-nix ready
+$ wkg cmdo-nix ready
 
 # Bare devtree: targets the devtree root's own scope.
-$ bdg work list
+$ wkg work list
 
 # Arguments are forwarded verbatim, including cross-project dependency targets.
-$ bdg work:cmdo-nix dep add commando-nix-a1b2 external:ghh:build
+$ wkg work:cmdo-nix dep add commando-nix-a1b2 external:ghh:build
 ```
 
-### `bdt` — in-devtree routing
+### `wkt` — in-devtree routing
 
 ```
 # Devtree taken from the current directory; only the project is named.
-$ bdt ghh list
-$ bdt cmdo-nix ready
+$ wkt ghh list
+$ wkt cmdo-nix ready
 
 # Same, from anywhere under the devtree.
-$ cd ~/self/my-projects/ghh/subdir && bdt cmdo-nix list
+$ cd ~/self/my-projects/ghh/subdir && wkt cmdo-nix list
 ```
 
 ### Ambiguity and errors
 
 ```
 # Outside a devtree, a colliding bare project is rejected, never guessed:
-$ bdg api list
+$ wkg api list
 !! ERROR: 'api' is ambiguous across devtrees: self, work
-   qualify as 'bdg self:api' or 'bdg work:api'
+   qualify as 'wkg self:api' or 'wkg work:api'
 
 # A project unknown to the lazy registry has nowhere to route:
-$ bdg ghh list
+$ wkg ghh list
 !! ERROR: 'ghh' project is unknown in devtree 'self'
 ```
 
 ### Routing semantics
 
-`bdg`/`bdt` resolve the target to a workspace directory, change into it, and exec `bd` from `PATH` with the forwarded arguments.
-The underlying `bd` runs unmodified, save for one rewrite: a target's `:scope` segment is turned into `bd` label arguments before exec (see the task-scopes spec). There is no other output rewriting or query interception.
-`bdg`/`bdt` stream `bd`'s output and propagate its exit status, so they are transparent for piping and scripting.
-Exec'ing `bd` from `PATH` (rather than a private binary) is deliberate: it lets the target devtree's `bd` wrapper start and attach its shared Dolt server (see *Placement / Scope*).
+`wkg`/`wkt` resolve the target to a workspace directory, change into it, and exec `wk` from `PATH` with the forwarded arguments.
+Routing adds no rewriting of its own, save for one: a target's `:scope` segment is turned into `bd` label arguments by the `wk` wrapper before it invokes `bd` (see the task-scopes spec). There is no other output rewriting or query interception.
+
+`wkg`/`wkt` stream `wk`'s output and propagate its exit status, so they are transparent for piping and scripting.
+Exec'ing `wk` from `PATH` is deliberate: it lets the target devtree's `wk` wrapper start and attach its shared Dolt server, and reach the bundled `bd` (see `_SPECS/wk-beads-wrappers/SPEC.md` and *Placement / Scope*).
 
 ## Resolution rules
 
@@ -154,7 +159,8 @@ The enclosing devtree is found by walking up for the `.devtree-root` marker.
 
 A bare name is matched against devtree names first.
 On a match, the target is the devtree root's own scope.
-Devtree names are global and win over any project prefix of the same spelling, so `bdg work` always means the devtree `work`, never a project named `work`.
+
+Devtree names are global and win over any project prefix of the same spelling, so `wkg work` always means the devtree `work`, never a project named `work`.
 
 When the bare name is not a devtree name, it is treated as a project and resolved by scope:
 - Current directory inside a devtree: resolved in that devtree's project registry only.
@@ -180,21 +186,23 @@ The qualified form is always available and is the way to reach a project in anot
 - An unknown devtree name is an error.
 - A project absent from the resolved devtree is an error; resolution never falls back to another devtree.
 
-### `bdt`
+### `wkt`
 
-`bdt` resolves the devtree from the current directory and the project within that devtree's project registry only.
+`wkt` resolves the devtree from the current directory and the project within that devtree's project registry only.
 It never reads the known-devtrees list.
 
 ## Registry
 
-The registry is a harness-wide concept, not a `bdg` detail.
+The registry is a harness-wide concept, not a `wkg` detail.
 It has two tiers, both populated lazily by devtree-aware tooling and each stored as a single JSON index.
-This spec defines the contract `bdg`/`bdt` rely on; the registry's own commands live in the `devtree` CLI.
+
+This spec defines the contract `wkg`/`wkt` rely on; the registry's own commands live in the `devtree` CLI.
 
 ### Devtree project registry
 
 Each devtree keeps its own index of its projects under `<devtree>/.state/`.
 A project enters the index once devtree-aware tooling interacts with it inside that devtree; its identity is the `issue_prefix`.
+
 The index is lazy-only: no scan, no TTL, and a project never interacted with stays absent.
 `devtree registry refresh` is the explicit escape hatch that rebuilds a devtree's index.
 
@@ -202,6 +210,7 @@ The index is lazy-only: no scan, no TTL, and a project never interacted with sta
 
 The global list is held under `$XDG_STATE_HOME/devtree-global/` and stores each devtree's name and path only — no project data.
 A devtree enters the list when any devtree interaction happens inside it.
+
 Resolving across devtrees reads each entry's project registry from its recorded path, on demand.
 
 ### Lazy registration
@@ -209,7 +218,8 @@ Resolving across devtrees reads each entry's project registry from its recorded 
 `devtree registry lazy-register` is the single upsert all devtree-aware tooling calls on interaction.
 It adds the current project to its devtree's project registry, and the current devtree to the known-devtrees list, each only if not already present.
 It is idempotent.
-`bdg`/`bdt` are ordinary consumers of this contract, no different from any other devtree-aware tool.
+
+`wkg`/`wkt` are ordinary consumers of this contract, no different from any other devtree-aware tool.
 
 ### Freshness
 
@@ -223,31 +233,31 @@ A devtree project registry only changes through interaction or an explicit `refr
 
 - Devtree project registries live under `<devtree>/.state/`, alongside other devtree state (see `_SPECS/devtree-daemons/SPEC.md`); they are never committed to a project repo.
 - The known-devtrees list lives under `$XDG_STATE_HOME/devtree-global/`.
-- `bdg`/`bdt` write no state inside a project repo; a project only ever carries its `.beads/` workspace.
+- `wkg`/`wkt` write no state inside a project repo; a project only ever carries its `.beads/` workspace.
 
 ### In scope
 
 - Resolving a target to exactly one beads workspace.
-- Routing to it (change directory, then exec `bd`), preserving arguments, output, and exit status.
+- Routing to it (change directory, then exec `wk`), preserving arguments, output, and exit status.
 - Consuming the harness registry contract: reading registries for resolution, and calling `devtree registry lazy-register` on interaction.
 
 ### Out of scope
 
-- **Aggregate or cross-project reporting.** `bdg`/`bdt` route one command to one project; there is no `bdg all …`.
-- **The `bd` wrapper.** It is an external artifact (see *Related artifacts*); `bdg`/`bdt` only rely on it being on `PATH`.
+- **Aggregate or cross-project reporting.** `wkg`/`wkt` route one command to one project; there is no `wkg all …`.
+- **The `wk` frontend.** The `wk`/`wkg`/`wkt` binaries, the `wk` wrapper, its packaging, and its `wk init` are owned by `_SPECS/wk-beads-wrappers/SPEC.md`; this spec only relies on `wk` being on `PATH`.
 - **Registry management commands.** `devtree registry lazy-register` and `devtree registry refresh` belong to the `devtree` CLI; this spec fixes only their contract.
 - **Scope semantics.** The `:scope` model and its translation into `bd` label arguments belong to the task-scopes spec; this spec only reserves the optional third target segment.
-- **`bd` itself** and its issue model, which `bdg`/`bdt` do not reimplement.
+- **`bd` itself** and its issue model, which `wkg`/`wkt` do not reimplement.
 
 ## Alternatives & Tradeoffs
 
-The chosen direction is a two-command routing layer (`bdg`/`bdt`) over a two-tier lazy registry.
+The chosen direction is a two-command routing layer (`wkg`/`wkt`) over a two-tier lazy registry.
 
 ### Option A — pure routing (chosen)
 
 ```
-$ bdg work:cmdo-nix list --status=open
-# -> chdir <devtree>/cmdo-nix, exec bd list --status=open
+$ wkg work:cmdo-nix list --status=open
+# -> chdir <devtree>/cmdo-nix, exec wk list --status=open
 ```
 
 - Advantages: minimal surface; `bd` stays the single source of truth; arguments, output, and exit status pass through untouched, bar the `:scope` rewrite; matches Gas City's `gc bd --rig` ceiling.
@@ -256,7 +266,7 @@ $ bdg work:cmdo-nix list --status=open
 ### Option B — routing plus aggregate reporting
 
 ```
-$ bdg all list --status=open       # every project, every devtree
+$ wkg all list --status=open       # every project, every devtree
 ```
 
 - Advantages: one query spans projects, useful for a global work view.
@@ -274,12 +284,13 @@ $ bdg all list --status=open       # every project, every devtree
 ### Decision criteria
 
 - Option A when the goal is addressing: the layer routes, `bd` answers.
-- Option B only if a cross-project reporting need appears that per-project `bdg` calls cannot meet.
+- Option B only if a cross-project reporting need appears that per-project `wkg` calls cannot meet.
 - Option C only while devtree count stays tiny; the known-devtrees list is already a cheap cache.
 
 ## Related artifacts
 
-- `HANDOFF-20260920-beads-shared-server-devtree.md` — the `bd` wrapper this spec routes into (one shared Dolt socket per devtree).
+- `_SPECS/wk-beads-wrappers/SPEC.md` — the `wk`/`wkg`/`wkt` task frontend this spec routes through; owns the `wk` wrapper, its packaging, and `wk init`.
+- `HANDOFF-20260920-beads-shared-server-devtree.md` — the `wk` wrapper's per-devtree shared Dolt server (one socket per devtree).
 - `README.md` — the devtree definition, the human-first constraint, and the tooling inventory.
 - `docs/beads-refs/` — the `bd` data model, how-to, and tag vocabulary, including the `issue_prefix` and `external:<project>:<capability>` mechanics this spec leans on.
 - `_SPECS/devtree-daemons/SPEC.md` — the `<devtree>/.state/` convention and the one-server-per-devtree pattern.

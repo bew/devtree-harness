@@ -22,7 +22,7 @@ The host and token shape are settled; the open questions are how a scope segment
 ## Decisions
 
 - (settled) Explicit per-invocation trigger; no ambient and no persisted active scope.
-- (settled) The translation lives in the wrapper layer (`bdg`/`bdt`/`bd`) behind a shared implementation, not in a separate `t` binary.
+- (settled) The translation lives in the wrapper layer (`bdg`/`bdt`/`bd`) behind a shared implementation, not in a separate `wk` binary.
 - (settled) All three rewrite: `bdg`, `bdt`, and the `bd` wrapper each invoke the shared rewrite. NOTE — rewriting inside `bdg`/`bdt` contradicts the routing spec's pure-routing clause ("`bd` runs unmodified … no query interception"); that spec needs an amendment or an explicit exception.
 - (settled) Grammar — `bd` (direct): a leading `:scope` token in the forwarded args, e.g. `bd :auth list`. `bdg`/`bdt`: a positional segment on the target, e.g. `bdg self:ghh:auth list`, `bdt ghh:auth list`.
 - (settled) Two-segment `bdg` target: devtree names win. `ghh:auth` means devtree `ghh` + project `auth` when `ghh` is a known devtree, else project `ghh` + scope `auth`. (`bdt ghh:auth` is unambiguously project `ghh` + scope `auth` — `bdt` has no devtree segment.)

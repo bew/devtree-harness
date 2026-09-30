@@ -17,6 +17,3 @@ Out of scope: devtree-level and cross-devtree routing semantics (settled in the 
 
 - (settled) `scope-model` — what a scope is, its identity, and how membership is represented
 - (active) `scope-translation` — how a `:scope` selector is rewritten into the right per-verb `bd` label param, and which wrapper layer performs the rewrite
-
-The broader `t` CLI was split off into its own exploration at `_WIP_EXPLORATIONS/frontend-cli/`;
-it gets its own later spec, and scope translation now lives in the wrapper layer instead.

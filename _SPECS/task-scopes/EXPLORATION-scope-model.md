@@ -11,7 +11,7 @@ What a scope is, what identifies it, and how a task's membership in one or more 
 - Membership is a `bd` label in a reserved `scope:` namespace (e.g. `scope:auth`); filtering is `bd list --label scope:<name>`. The prefix keeps scopes distinct from ordinary tags.
 - Membership is purely additive: a task carries any number of scopes; no primary scope and no exclusive dimension.
 - A declared vocabulary was considered, then dropped for now: scopes exist only as labels — no project config and no governance.
-- The user is leaning toward a personal frontend CLI (`t`) that wraps `bd` without exposing it directly, e.g. `t :myscope ready` queries ready tasks carrying `scope:myscope`; scope addressing and any active context may live there rather than in `bdg`/`bdt`.
+- The user is leaning toward a personal frontend CLI (`wk`) that wraps `bd` without exposing it directly, e.g. `wk :myscope ready` queries ready tasks carrying `scope:myscope`; scope addressing and any active context may live there rather than in `bdg`/`bdt`.
 - A scope is a read-side filter named per invocation; nothing is persisted as a "current scope".
 
 ## Design crux
@@ -39,8 +39,8 @@ Where the syntax lives is settled — the wrapper layer (`bdg`/`bdt`/`bd`) behin
 
 ## Open threads
 
-- (answered) Scope syntax lives in the wrapper layer (`bdg`/`bdt`/`bd`) behind a shared implementation, not a separate `t` binary; see `EXPLORATION-scope-translation.md`.
-- Composition grammar: `t :scope ready` vs `t project:scope ready` vs `t devtree:project:scope ready` — how are the segments disambiguated?
+- (answered) Scope syntax lives in the wrapper layer (`bdg`/`bdt`/`bd`) behind a shared implementation, not a separate `wk` binary; see `EXPLORATION-scope-translation.md`.
+- Composition grammar: `wk :scope ready` vs `wk project:scope ready` vs `wk devtree:project:scope ready` — how are the segments disambiguated?
 - With no declared list, what does the "hint" on first use of a scope actually say?
 - Is the label literally `scope:<name>`; how does it avoid noise in `bd label list-all`?
 - Does the frontend offer an ephemeral active scope, given nothing is persisted?

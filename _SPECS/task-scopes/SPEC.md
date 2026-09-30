@@ -2,18 +2,21 @@
 
 ## Introduction
 
-The cross-devtree task routing layer (`bdg`/`bdt`, see `_SPECS/cross-devtree-task-routing/SPEC.md`) addresses projects.
-One target resolves to exactly one project, and `bd` runs there unmodified.
+The cross-devtree task routing layer (`wkg`/`wkt`, see `_SPECS/cross-devtree-task-routing/SPEC.md`) addresses projects.
+One target resolves to exactly one project, and `wk` runs there unmodified.
+
 That is the right granularity for reaching a project, but not for working inside one: a project holds many tasks, and the routing layer has no way to express a finer grouping of them.
 
 A scope is that finer grouping.
 It is a per-project classification on a task, where a task can sit in several scopes at once.
+
 Scopes are neither cross-devtree nor intra-devtree — they belong to a project, not to the devtree addressing axis.
 They are flat and free-form: there is no declared vocabulary, and no membership is exclusive.
 
-A scope is carried as an ordinary `bd` label under a reserved `scope:` namespace (`scope:auth`), and selected on the command line with a `:scope` segment (`bdg self:ghh:auth list`).
+A scope is carried as an ordinary `bd` label under a reserved `scope:` namespace (`scope:auth`), and selected on the command line with a `:scope` segment (`wkg self:ghh:auth list`).
 The segment is not addressing: it does not change which project is reached.
 Instead, the wrapper layer rewrites it into the right `bd` label parameter per subcmd and forwards the rest of the command verbatim.
+
 The routing spec reserves that optional third target segment; this spec defines the scope model and the rewrite.
 
 The design serves the human first, per the harness constraint in `README.md`: a short, explicit selector typed per invocation, with no persisted "current scope" and no new storage.
@@ -35,7 +38,7 @@ The optional `:scope` part of a command-line target — `:auth`, or `:auth,ui` f
 It selects membership on reads and assigns it on writes.
 
 **wrapper layer** (new!):
-The `bd` wrapper — which may also provide a devtree-aware shared Dolt server — together with `bdg`/`bdt`.
+The `wk` wrapper — the in-project `wk` frontend that reaches the bundled `bd` — together with `wkg`/`wkt`.
 All three share one rewrite implementation and are the only point where a scope segment becomes a `bd` label parameter.
 
 ## Scope as a `bd` label
@@ -43,6 +46,7 @@ All three share one rewrite implementation and are the only point where a scope 
 A scope has no storage of its own: it is an ordinary `bd` label under a reserved namespace.
 Membership is the label's presence, so a task is in scope `auth` exactly when it carries the label `scope:auth`.
 The write and read sides are `bd`'s own: `bd label add`/`remove` and `--set-labels` write membership, and `bd list --label scope:auth` reads it.
+
 The scope layer introduces no table, index, or file — only a naming convention plus the rewrite.
 
 A label was chosen over the other carriers:
@@ -86,26 +90,27 @@ scope-list    := scope-name ("," scope-name)*
 **Command shapes**:
 
 ```
-bd  [:scope-list] <subcmd> [args…]      # direct — a leading segment before the subcmd
-bdg <target>[:scope-list] [args…]       # routed — appended to the target
-bdt <project>[:scope-list] [args…]      # in-devtree — appended to the project
+wk   [:scope-list] <subcmd> [args…]      # direct — a leading segment before the subcmd
+wkg <target>[:scope-list] [args…]       # routed — appended to the target
+wkt <project>[:scope-list] [args…]      # in-devtree — appended to the project
 ```
 
 ```
-bd :auth list
-bdg self:ghh:auth list
-bdt ghh:auth list
-bdg self:ghh:auth,ui ready
+wk :auth list
+wkg self:ghh:auth list
+wkt ghh:auth list
+wkg self:ghh:auth,ui ready
 ```
 
 The segment is the last part of the target and adds no addressing axis (see *Segment resolution*).
-An empty project segment targets the devtree root's own workspace — `bdg work::auth`, `bdt :auth`.
-The direct-`bd` form is wrapper syntax: stock `bd` takes no leading `:scope`, so the `bd` wrapper strips it before exec (see *Translation rules*).
+An empty project segment targets the devtree root's own workspace — `wkg work::auth`, `wkt :auth`.
+
+The direct-`wk` form is wrapper syntax: stock `bd` takes no leading `:scope`, so the `wk` wrapper strips it before exec (see *Translation rules*).
 A leading `:` token is always a scope; there is no escape, so a literal argument beginning with `:` cannot be forwarded in that position.
 
 ## Interface / How to use
 
-A scope segment is typed on a routed target (`bdg`/`bdt`) or as a leading token before a direct-`bd` subcmd.
+A scope segment is typed on a routed target (`wkg`/`wkt`) or as a leading token before a direct-`wk` subcmd.
 The same segment filters on reads, assigns on writes, and is dropped with a warning on subcmds that cannot carry it.
 
 ### Filtering
@@ -113,15 +118,16 @@ The same segment filters on reads, assigns on writes, and is dropped with a warn
 On read subcmds that take a label filter (`ready`, `list`, `count`), the segment becomes `--label scope:<name>`.
 
 ```
-bd :auth list                    # -> bd list --label scope:auth
-bdg self:ghh:auth ready          # -> bd ready --label scope:auth
-bdt ghh:auth list
+wk :auth list                     # -> bd list --label scope:auth
+wkg self:ghh:auth ready           # -> bd ready --label scope:auth   (in project ghh)
+wkt ghh:auth list
 ```
+
 
 Several scopes are ANDed, expanding to repeated `--label` flags.
 
 ```
-bdg self:ghh:auth,ui list        # -> bd list --label scope:auth --label scope:ui
+wkg self:ghh:auth,ui list        # -> bd list --label scope:auth --label scope:ui
 ```
 
 ### Assignment
@@ -129,9 +135,9 @@ bdg self:ghh:auth,ui list        # -> bd list --label scope:auth --label scope:u
 On write subcmds, the segment assigns membership.
 
 ```
-bdg self:ghh:auth create --title="Fix login"   # -> bd create --title="…" --labels scope:auth
-bdt ghh:auth create --title="Fix login"
-bd :auth update ghh-123 priority=1             # -> bd update ghh-123 priority=1 --add-label scope:auth
+wkg self:ghh:auth create --title="Fix login"   # -> bd create --title="…" --labels scope:auth
+wkt ghh:auth create --title="Fix login"
+wk :auth update ghh-123 priority=1             # -> bd update ghh-123 priority=1 --add-label scope:auth
 ```
 
 ### Query
@@ -139,7 +145,7 @@ bd :auth update ghh-123 priority=1             # -> bd update ghh-123 priority=1
 `bd query` carries `label=` in its own query language.
 
 ```
-bd :auth query "status=open"     # -> bd query "label=scope:auth AND status=open"
+wk :auth query "status=open"     # -> bd query "label=scope:auth AND status=open"
 ```
 
 ### Subcmds with no label parameter
@@ -148,7 +154,7 @@ Subcmds such as `close`, `show`, `dep`, `comment`, and `note` expose no label pa
 A scope segment there is dropped with a warning, and the subcmd runs unchanged.
 
 ```
-$ bd :auth close ghh-123
+$ wk :auth close ghh-123
 !! warning: ignored scope 'auth'; `close` takes no label parameter
 ```
 
@@ -181,7 +187,7 @@ A subcmd outside the table is treated as label-less: the scope is ignored with a
 
 ## Segment resolution
 
-A `bdg`/`bdt` target is a `:`-separated sequence of segments.
+A `wkg`/`wkt` target is a `:`-separated sequence of segments.
 Resolution keeps the routing spec's rules for the devtree and project axes, and layers the scope segment on top as the last segment.
 
 ### Two axes plus a scope
@@ -189,40 +195,43 @@ Resolution keeps the routing spec's rules for the devtree and project axes, and 
 The scope segment is optional and always last; everything before it is the routing address, resolved by the routing spec unchanged.
 
 ```
-<devtree>:<project>:<scope-list>     # bdg
-       <project>:<scope-list>        # bdt — devtree from cwd
+<devtree>:<project>:<scope-list>     # wkg
+       <project>:<scope-list>        # wkt — devtree from cwd
 ```
 
-`bdt` has no devtree segment, so its leading segment is always a project and its scope is never confused with a devtree.
+`wkt` has no devtree segment, so its leading segment is always a project and its scope is never confused with a devtree.
 
 ### Devtree names win
 
-For `bdg`, a two-segment target is ambiguous between `<devtree>:<project>` and `<project>:<scope-list>`.
+For `wkg`, a two-segment target is ambiguous between `<devtree>:<project>` and `<project>:<scope-list>`.
 The routing spec's existing rule decides it: a bare name matching a known devtree is that devtree.
-So `bdg work:auth` is devtree `work` + project `auth` whenever `work` is a known devtree, never project `work` + scope `auth`.
-When the first segment is not a devtree name, the pair reads as `<project>:<scope-list>`, so `bdg ghh:auth` is project `ghh` + scope `auth`.
+
+So `wkg work:auth` is devtree `work` + project `auth` whenever `work` is a known devtree, never project `work` + scope `auth`.
+When the first segment is not a devtree name, the pair reads as `<project>:<scope-list>`, so `wkg ghh:auth` is project `ghh` + scope `auth`.
 The three-segment form `<devtree>:<project>:<scope-list>` is unambiguous.
 
 ### The devtree root's own workspace
 
-The devtree root carries its own `bd` workspace, reachable by its bare devtree name (`bdg work`).
-That name occupies the devtree segment, so `bdg work:auth` always means devtree `work` + project `auth`, never the root's own workspace with a scope.
-An empty project segment targets the root itself: `bdg work::auth` is devtree `work`'s own workspace plus scope `auth`.
-In `bdt`, which has no devtree segment, the same form is a leading empty project segment: `bdt :auth`.
+The devtree root carries its own `bd` workspace, reachable by its bare devtree name (`wkg work`).
+That name occupies the devtree segment, so `wkg work:auth` always means devtree `work` + project `auth`, never the root's own workspace with a scope.
+
+An empty project segment targets the root itself: `wkg work::auth` is devtree `work`'s own workspace plus scope `auth`.
+In `wkt`, which has no devtree segment, the same form is a leading empty project segment: `wkt :auth`.
 
 ## Placement / Scope
 
 ### Where the rewrite lives
 
-The scope rewrite is one shared implementation consumed by all three entry points: `bdg`, `bdt`, and the `bd` wrapper.
-`bdg`/`bdt` resolve the target, strip its scope segment, call the shared rewrite, then exec `bd`.
-A direct `bd` invocation reaches the same rewrite through the `bd` wrapper, the universal chokepoint for every call.
+The scope rewrite is one shared implementation consumed by all three entry points: `wkg`, `wkt`, and the `wk` wrapper.
+`wkg`/`wkt` resolve the target, strip its scope segment, call the shared rewrite, then exec `wk`.
+A direct `wk` invocation reaches the same rewrite through the `wk` wrapper, the universal chokepoint for every call.
+
 The layer adds no per-project artifact: nothing is written into a project repo, and no state file, cache, or server-side construct is introduced.
 
 ### In scope
 
 - The scope model: a reserved `scope:` label namespace, flat and free-form, carrying membership.
-- The `:scope` selection syntax across `bdg`, `bdt`, and direct `bd`.
+- The `:scope` selection syntax across `wkg`, `wkt`, and direct `wk`.
 - Translating a scope segment into the per-subcmd `bd` label parameter.
 - Merging scopes with caller-supplied label flags.
 
@@ -230,10 +239,10 @@ The layer adds no per-project artifact: nothing is written into a project repo, 
 
 - **A declared scope vocabulary.** No project config lists scopes; no governance or validation beyond the label charset.
 - **A persisted or ambient active scope.** A scope is named per invocation; nothing is stored as a "current scope".
-- **A separate `t` binary.** The personal frontend CLI is a distinct artifact with its own future spec (`_WIP_EXPLORATIONS/frontend-cli/`).
-- **Aggregate or cross-project scope queries.** As in the routing spec, one invocation targets one project; there is no `bdg all :auth`.
+- **The `wk` frontend.** The `wk`/`wkg`/`wkt` binaries, the `wk` wrapper, and their packaging are owned by `_SPECS/wk-beads-wrappers/SPEC.md`.
+- **Aggregate or cross-project scope queries.** As in the routing spec, one invocation targets one project; there is no `wkg all :auth`.
 - **`bd` itself** and its label model, which the scope layer only rides on.
-- **The `bd` wrapper's lifecycle.** It is external (see the routing spec); this spec only relies on it to perform the rewrite.
+- **The `wk` wrapper's lifecycle.** It belongs to the frontend spec; this spec only relies on it to perform the rewrite.
 
 ## Alternatives & Tradeoffs
 
@@ -243,7 +252,7 @@ The options below are whole-design directions; the carrier choice within the cho
 ### Option A — reserved label + wrapper rewrite (chosen)
 
 ```
-$ bdg self:ghh:auth list
+$ wkg self:ghh:auth list
 # -> bd list --label scope:auth   (in project ghh)
 ```
 
@@ -253,7 +262,7 @@ $ bdg self:ghh:auth list
 ### Option B — convention only, no rewrite
 
 ```
-$ bdg self:ghh list --label scope:auth
+$ wkg self:ghh list --label scope:auth
 # the user spells the label and the flag themselves
 ```
 
@@ -263,7 +272,7 @@ $ bdg self:ghh list --label scope:auth
 ### Option C — first-class scopes
 
 ```
-$ bdg self:ghh --scope auth list
+$ wkg self:ghh --scope auth list
 # scopes stored and indexed by the harness, not as bd labels
 ```
 
@@ -278,14 +287,14 @@ $ bdg self:ghh --scope auth list
 
 ## Related artifacts
 
-- `_SPECS/cross-devtree-task-routing/SPEC.md` — the routing layer this builds on; defines `bdg`/`bdt` and reserves the `:scope` target segment.
+- `_SPECS/cross-devtree-task-routing/SPEC.md` — the routing layer this builds on; defines `wkg`/`wkt` and reserves the `:scope` target segment.
 - `EXPLORATION-scope-model.md`, `EXPLORATION-scope-translation.md` in this directory — the pre-spec design record for the scope model and the rewrite.
 - `docs/beads-refs/` — the `bd` data model and how-to, including labels and the per-subcmd label flags the rewrite targets.
-- `HANDOFF-20260920-beads-shared-server-devtree.md` — the `bd` wrapper this spec's rewrite rides in (one shared Dolt socket per devtree).
-- `_WIP_EXPLORATIONS/frontend-cli/` — the deferred personal frontend CLI (`t`) that may later wrap this syntax.
+- `HANDOFF-20260920-beads-shared-server-devtree.md` — the `wk` wrapper this spec's rewrite rides in (one shared Dolt socket per devtree).
+- `_SPECS/wk-beads-wrappers/SPEC.md` — the `wk`/`wkg`/`wkt` frontend; its `wk` wrapper is where this spec's rewrite lives.
 - `README.md` — the devtree definition and the human-first constraint this design follows.
 
 ## Global Open Questions
 
-1. Whether the personal frontend CLI (`t`) supersedes the `:scope` wrapper syntax.
-   Non-blocking. Deferred to its own spec; see `_WIP_EXPLORATIONS/frontend-cli/`.
+1. Whether the personal frontend CLI (`wk`) supersedes the `:scope` wrapper syntax.
+   Resolved: yes. The `wk`/`wkg`/`wkt` frontend supersedes the `:scope` wrapper syntax at the surface; see `_SPECS/wk-beads-wrappers/SPEC.md`.
