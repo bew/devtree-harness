@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+# Set up beads (`bd init`) in a devtree project with harness-safe defaults:
+# no agent files, no git hooks, no auto-commit; tracks only the wanted .beads files.
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+TRACKED_BEADS_FILES = [
+    ".beads/.gitignore",
+    ".beads/README.md",
+    ".beads/config.yaml",
+    ".beads/metadata.json",
+    ".beads/issues.jsonl",
+]
+SKILLS_MODES = ("in-repo", "devtree", "skip")
+SKILLS_ENV_VAR = "BEADS_DEVTREE_INIT_SKILLS"
+
+
+class ScriptError(Exception):
+    """Raised when the script encounters an error."""
+
+
+def print_err(msg: str) -> None:
+    """Print msg to stderr."""
+    print(msg, file=sys.stderr)
+
+
+def run_command(
+    cmd: list[str], cwd: Path | None = None, capture: bool = True
+) -> subprocess.CompletedProcess[str]:
+    """Run cmd; when capture is False its stdio is inherited so it can prompt."""
+    try:
+        return subprocess.run(cmd, cwd=cwd, capture_output=capture, text=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ScriptError(f"could not run `{' '.join(cmd)}`: {exc}") from exc
+
+
+# -------------------------------------------------------
+# Preconditions
+
+
+def check_dependencies() -> None:
+    """Ensure git and bd are on PATH; raise ScriptError otherwise."""
+    for command in ("git", "bd"):
+        if shutil.which(command) is None:
+            raise ScriptError(f"required command not found: {command}")
+
+
+def get_repo_dir(repo: str) -> Path:
+    """Resolve repo to an absolute path and verify it is a git work tree."""
+    path = Path(repo).expanduser().resolve()
+    if not path.exists():
+        raise ScriptError(f"repo path does not exist: {path}")
+    result = run_command(["git", "-C", str(path), "rev-parse", "--git-dir"])
+    if result.returncode != 0:
+        raise ScriptError(f"not a git repository: {path}")
+    return path
+
+
+def resolve_devtree_root(directory: Path) -> Path:
+    """Find the enclosing devtree root by walking up for a `.devtree-root` marker."""
+    current = directory
+    while True:
+        if (current / ".devtree-root").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            raise ScriptError(
+                f"no .devtree-root found above {directory}; create one at the devtree root"
+            )
+        current = parent
+
+
+def check_not_initialized(repo: Path) -> None:
+    """Refuse to proceed when the repo already contains a .beads/ directory."""
+    if (repo / ".beads").exists():
+        raise ScriptError(f".beads/ already exists in {repo}; refusing to re-initialize")
+
+
+# -------------------------------------------------------
+# Beads setup
+
+
+def get_head(repo: Path) -> str | None:
+    """Return the current HEAD sha, or None when the repo has no commits."""
+    result = run_command(["git", "-C", str(repo), "rev-parse", "HEAD"])
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def build_bd_init_args(
+    interactive: bool, prefix: str | None, extra_bd_args: list[str]
+) -> list[str]:
+    """Assemble the `bd init` argv: harness-safe flags, optional prefix, forwarded args."""
+    args = ["bd", "init", "--stealth", "--skip-agents", "--skip-hooks"]
+    if not interactive:
+        args.append("--non-interactive")
+    if prefix:
+        args += ["--prefix", prefix]
+    return [*args, *extra_bd_args]
+
+
+def run_bd_init(repo: Path, bd_args: list[str], interactive: bool) -> None:
+    """Run `bd init`; an interactive run inherits the terminal so bd can prompt."""
+    result = run_command(bd_args, cwd=repo, capture=not interactive)
+    if result.returncode != 0:
+        detail = result.stderr.strip() if result.stderr else "see output above"
+        raise ScriptError(f"bd init failed: {detail}")
+
+
+def undo_commit(repo: Path, head_before: str | None) -> None:
+    """Soft-reset to head_before when bd created a commit despite stealth."""
+    if head_before is None:
+        return
+    head_now = get_head(repo)
+    if head_now is None or head_now == head_before:
+        return
+    result = run_command(["git", "-C", str(repo), "reset", "--soft", head_before])
+    if result.returncode != 0:
+        raise ScriptError(f"failed to undo bd's auto-commit: {result.stderr.strip()}")
+
+
+def ensure_issues_file(repo: Path) -> None:
+    """Ensure .beads/issues.jsonl exists so it can be tracked from the start."""
+    (repo / ".beads" / "issues.jsonl").touch()
+
+
+def track_beads_files(repo: Path) -> None:
+    """Force-add the wanted .beads files (stealth excludes .beads/, so force is needed)."""
+    existing = [repo / name for name in TRACKED_BEADS_FILES if (repo / name).exists()]
+    if not existing:
+        return
+    result = run_command(["git", "-C", str(repo), "add", "--force", *map(str, existing)])
+    if result.returncode != 0:
+        raise ScriptError(f"failed to track beads files: {result.stderr.strip()}")
+
+
+# -------------------------------------------------------
+# Interactive prompts and skills placement
+
+
+def is_interactive() -> bool:
+    """True when both stdin and stdout are terminals, so prompting is safe."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def has_forwarded_prefix(bd_args: list[str]) -> bool:
+    """True when --prefix/-p is already present among the forwarded bd arguments."""
+    return any(
+        arg == "--prefix" or arg.startswith("--prefix=") or arg == "-p" or arg.startswith("-p=")
+        for arg in bd_args
+    )
+
+
+def prompt_issue_prefix() -> str:
+    """Ask for the issue prefix, requiring a non-empty answer."""
+    while True:
+        try:
+            answer = input("Enter issue prefix: ").strip()
+        except EOFError as exc:
+            raise ScriptError("issue prefix is required in interactive mode") from exc
+        if answer:
+            return answer
+        print_err("!! prefix cannot be empty")
+
+
+def get_skills_source() -> Path:
+    """Return the packaged skills directory, honoring the env override, and require it."""
+    env_source = os.environ.get(SKILLS_ENV_VAR)
+    source = Path(env_source) if env_source else Path(__file__).resolve().parent / "skills"
+    if not source.is_dir():
+        raise ScriptError(f"skills source not found: {source}; set {SKILLS_ENV_VAR}")
+    return source
+
+
+def list_skills(source: Path) -> list[str]:
+    """Return the names of the skill directories available in source."""
+    return sorted(path.name for path in source.iterdir() if path.is_dir())
+
+
+def devtree_skills_installed(devtree_root: Path, skill_names: list[str]) -> bool:
+    """True when every skill is already present under the devtree's .agents/skills/."""
+    skills_dir = devtree_root / ".agents" / "skills"
+    return all((skills_dir / name).is_dir() for name in skill_names)
+
+
+def prompt_skills_mode(devtree_installed: bool) -> str:
+    """
+    Ask where to install the beads skills, offering only the applicable modes.
+
+    Installing to the devtree is pointless when it already carries the skills, so
+    that case offers skip (default) or in-repo; otherwise in-repo (default) or devtree.
+    """
+    print("Where should the beads skills be installed?")
+    if devtree_installed:
+        print("  [1] skip (default) - already present at the devtree root")
+        print("  [2] in-repo      - <repo>/.agents/skills/")
+        choices = {"": "skip", "1": "skip", "skip": "skip", "2": "in-repo", "in-repo": "in-repo"}
+        fallback = "skip"
+    else:
+        print("  [1] in-repo (default) - <repo>/.agents/skills/")
+        print("  [2] devtree         - <devtree>/.agents/skills/")
+        choices = {
+            "": "in-repo",
+            "1": "in-repo",
+            "in-repo": "in-repo",
+            "2": "devtree",
+            "devtree": "devtree",
+        }
+        fallback = "in-repo"
+    try:
+        answer = input("choice [1]: ").strip()
+    except EOFError:
+        answer = ""
+    if answer not in choices:
+        print_err(f"!! unrecognized choice: {answer}; using {fallback}")
+        return fallback
+    return choices[answer]
+
+
+def install_skills(repo: Path, devtree_root: Path, mode: str, source: Path) -> None:
+    """Install the packaged beads skills at the requested location, skipping existing ones."""
+    if mode == "skip":
+        print("Skipped installing beads skills")
+        return
+    base = devtree_root if mode == "devtree" else repo
+    target_root = base / ".agents" / "skills"
+    target_root.mkdir(parents=True, exist_ok=True)
+    installed: list[Path] = []
+    for skill in sorted(path for path in source.iterdir() if path.is_dir()):
+        target = target_root / skill.name
+        if target.exists():
+            print(f"skipped existing skill: {skill.name}")
+            continue
+        shutil.copytree(skill, target)
+        installed.append(target)
+        print(f"installed skill ({mode}): {skill.name}")
+    if mode == "in-repo" and installed:
+        result = run_command(["git", "-C", str(repo), "add", "-N", *map(str, installed)])
+        if result.returncode != 0:
+            raise ScriptError(f"failed to mark skills as intent-to-add: {result.stderr.strip()}")
+
+
+def print_manifest(repo: Path, devtree_root: Path) -> None:
+    """Print a summary of what init created, tracked, and left ignored."""
+    print(f"beads initialized in {repo}")
+    print(f"devtree root: {devtree_root}")
+    print("Tracked:")
+    for name in TRACKED_BEADS_FILES:
+        if (repo / name).exists():
+            print(f"  {name}")
+    print("Ignored: embeddeddolt/, interactions.jsonl, locks (via .beads/.gitignore)")
+
+
+# -------------------------------------------------------
+# Entry point
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse wrapper flags; extra arguments after `--` are forwarded to `bd init`."""
+    parser = argparse.ArgumentParser(
+        prog="beads-devtree-init",
+        description="Initialize beads in a devtree project with harness-safe defaults.",
+    )
+    parser.add_argument("--repo", default=".", help="target repo path (default: current directory)")
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help="run bd init interactively; prompts for the issue prefix and skills placement",
+    )
+    parser.add_argument(
+        "--skills",
+        default="",
+        metavar="MODE",
+        help="skill placement: in-repo|devtree|skip (prompts with --interactive when omitted)",
+    )
+    parser.add_argument(
+        "extra_bd_args",
+        nargs=argparse.REMAINDER,
+        help="extra arguments forwarded to `bd init` (put them after `--`)",
+    )
+    return parser.parse_args()
+
+
+def main() -> bool:
+    args = parse_args()
+    # argparse keeps a leading `--` separator in REMAINDER; drop it before forwarding
+    extra_bd_args = (
+        args.extra_bd_args[1:]
+        if args.extra_bd_args[:1] == ["--"]
+        else args.extra_bd_args
+    )
+    try:
+        check_dependencies()
+        repo = get_repo_dir(args.repo)
+        devtree_root = resolve_devtree_root(repo)
+        check_not_initialized(repo)
+        if args.interactive and not is_interactive():
+            raise ScriptError("--interactive requires a terminal")
+        prefix: str | None = None
+        if args.interactive and not has_forwarded_prefix(extra_bd_args):
+            prefix = prompt_issue_prefix()
+        skills_source = get_skills_source()
+        skill_names = list_skills(skills_source)
+        if args.skills:
+            skills_mode = args.skills
+        elif args.interactive:
+            skills_mode = prompt_skills_mode(devtree_skills_installed(devtree_root, skill_names))
+        else:
+            skills_mode = "in-repo"
+        if skills_mode not in SKILLS_MODES:
+            raise ScriptError(
+                f"invalid --skills value: {skills_mode}; use in-repo, devtree, or skip"
+            )
+        head_before = get_head(repo)
+        bd_args = build_bd_init_args(args.interactive, prefix, extra_bd_args)
+        run_bd_init(repo, bd_args, args.interactive)
+        undo_commit(repo, head_before)
+        ensure_issues_file(repo)
+        track_beads_files(repo)
+        install_skills(repo, devtree_root, skills_mode, skills_source)
+        print_manifest(repo, devtree_root)
+    except ScriptError as exc:
+        print_err(f"!! ERROR: {exc}")
+        return False
+    return True
+
+
+if __name__ == "__main__":
+    sys.exit(0 if main() else 1)

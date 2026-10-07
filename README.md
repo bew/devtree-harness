@@ -34,6 +34,8 @@ This repo aims to contain:
 
 Each exposed on flake `packages.<system>.*`.
 
+- `beads-devtree-init`: thin wrapper over beads's init that applies harness-safe defaults and offers where to place the devtree beads skills.
+  (to understand why, read [my `bd init` complaints](./docs/beads-init-complaints.md))
 - `devtree`: CLI over the devtree itself.
   For now only `devtree root --json`, which resolves the enclosing devtree root by walking up for the `.devtree-root` marker and prints `{name, path}`.
 

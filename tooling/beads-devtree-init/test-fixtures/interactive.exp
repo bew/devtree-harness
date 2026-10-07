@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+# Drive beads-devtree-init interactively for the bats suite.
+#
+# Usage: interactive.exp <wrapper> <repo> <prefix-answer> <skills-choice> [bd-args...]
+# A non-empty <prefix-answer> answers the wrapper's prefix prompt.
+# An empty one means the test expects no prefix prompt (a --prefix was forwarded);
+# if the wrapper still prompts, expect times out and the test fails.
+
+set timeout 60
+set wrapper [lindex $argv 0]
+set repo [lindex $argv 1]
+set prefix [lindex $argv 2]
+set skills [lindex $argv 3]
+set forwarded [lrange $argv 4 end]
+
+spawn -noecho $wrapper --repo $repo --interactive -- {*}$forwarded
+
+expect {
+    -re {Enter issue prefix:} {
+        if {$prefix eq ""} { exit 2 }
+        send "$prefix\r"
+        exp_continue
+    }
+    -re {choice \[1\]:} {
+        send "$skills\r"
+        exp_continue
+    }
+    -re {\[y/N\]:} {
+        send "n\r"
+        exp_continue
+    }
+    -re {beads initialized in} { exit 0 }
+    timeout { exit 2 }
+    eof { exit 0 }
+}

@@ -19,8 +19,11 @@
   in
   {
     packages = eachSystem (system: with (forSys system); {
+      beads-devtree-init = pkgs.callPackage ./tooling/beads-devtree-init/package.nix { };
       devtree = pkgs.callPackage ./tooling/devtree/package.nix { };
     });
+
+    homeModules.devtree-opencode = import ./integrations/devtree-context-for-agents.hm-module.nix;
 
     devShells = eachSystem (system: with (forSys system); {
       default = devsh.mkShell {
@@ -30,6 +33,8 @@
             # On nixos-unstable, beads gets built and the checkPhase takes FOREVER to run.. @2026-09
             doCheck = false;
           })
+          # Drives the interactive `beads-devtree-init` tests
+          pkgs.expect
         ];
       };
     });
